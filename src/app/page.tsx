@@ -59,6 +59,11 @@ export default function Home() {
 
   const leaderboards = useMemo(() => buildLeaderboards(squad.players), [squad.players]);
   const awards = useMemo(() => buildAwards(squad.players), [squad.players]);
+  const squadIntel = useMemo(
+    () => buildSquadIntel(squad.players, squad.history),
+    [squad.players, squad.history],
+  );
+  const chemistry = useMemo(() => buildChemistry(squad.players), [squad.players]);
   const chartData = useMemo(() => buildChartData(squad.history), [squad.history]);
 
   return (
@@ -69,7 +74,7 @@ export default function Home() {
           <h1>Your stack, your stats, your slander board.</h1>
           <p>
             A public squad dashboard backed by cached R6Data snapshots. Hit refresh
-            when you want the latest numbers; the page stays fast from Supabase cache.
+            when you want the latest numbers; the page stays fast from Redis cache.
           </p>
           <div className="heroActions">
             <button disabled={isPending || !squad.canRefresh} onClick={refresh}>
@@ -118,6 +123,36 @@ export default function Home() {
               <span>{award.title}</span>
               <strong>{award.player?.displayName ?? "--"}</strong>
               <small>{award.reason}</small>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel">
+        <h2>Squad Intel</h2>
+        <div className="intelGrid">
+          {squadIntel.map((item) => (
+            <div className="intelCard" key={item.label}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+              <small>{item.caption}</small>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel">
+        <h2>Questionable Chemistry Lab</h2>
+        <p>
+          Not real match correlation yet. This ranks pair vibes from current stat profiles,
+          so it is useful enough for arguments and bad enough to be funny.
+        </p>
+        <div className="chemistryGrid">
+          {chemistry.map((pair) => (
+            <div className="chemistryCard" key={pair.names}>
+              <span>{pair.label}</span>
+              <strong>{pair.names}</strong>
+              <small>{pair.reason}</small>
             </div>
           ))}
         </div>
@@ -188,7 +223,7 @@ function EmptyState() {
     <article className="emptyState">
       <h2>No cached squad stats yet.</h2>
       <p>
-        Add your R6Data key, Supabase credentials, run the schema, then press refresh.
+        Add your R6Data key and Upstash Redis credentials, then press refresh.
       </p>
     </article>
   );
@@ -230,7 +265,77 @@ function buildAwards(players: NormalizedPlayerStats[]) {
       player: hours,
       reason: hours ? `${formatNumber(hours.playtimeHours)} hours played` : "Needs data",
     },
+    {
+      title: "K/D Merchant",
+      player: maxPlayer(players, "kd"),
+      reason: "Probably says stats do not matter after every death",
+    },
+    {
+      title: "Morale Officer",
+      player: minPlayer(players, "kd"),
+      reason: "Keeps the enemy team confident",
+    },
   ];
+}
+
+function buildSquadIntel(players: NormalizedPlayerStats[], history: PlayerSnapshot[]) {
+  const avgKd = averageMetric(players, "kd");
+  const avgWin = averageMetric(players, "winRate");
+  const totalMatches = sumMetric(players, "matches");
+  const totalHours = sumMetric(players, "playtimeHours");
+  const rankSpread = spreadMetric(players, "rankPoints");
+  const mostImproved = findMostImproved(history, "rankPoints");
+  const volatile = findMostVolatile(history, "rankPoints");
+  const identity = getSquadIdentity(avgKd, avgWin, rankSpread);
+
+  return [
+    {
+      label: "Stack Identity",
+      value: identity.title,
+      caption: identity.caption,
+    },
+    {
+      label: "Average K/D",
+      value: formatDecimal(avgKd),
+      caption: "The number everyone quotes until they lose two rounds.",
+    },
+    {
+      label: "Average Win Rate",
+      value: formatPercent(avgWin),
+      caption: "The squad's collective ability to not throw match point.",
+    },
+    {
+      label: "Rank Spread",
+      value: rankSpread === null ? "--" : `${formatNumber(rankSpread)} RP`,
+      caption: "Lower means balanced stack. Higher means someone is babysitting.",
+    },
+    {
+      label: "Total Grind",
+      value: totalHours === null ? "--" : `${formatNumber(totalHours)}h`,
+      caption: `${formatNumber(totalMatches)} tracked matches across the five-stack.`,
+    },
+    {
+      label: "Most Improved",
+      value: mostImproved?.name ?? "--",
+      caption: mostImproved ? `Up ${formatNumber(mostImproved.delta)} RP across snapshots.` : "Needs more snapshots.",
+    },
+    {
+      label: "RP Rollercoaster",
+      value: volatile?.name ?? "--",
+      caption: volatile ? `${formatNumber(volatile.range)} RP swing. Emotional damage likely.` : "Needs more snapshots.",
+    },
+  ];
+}
+
+function buildChemistry(players: NormalizedPlayerStats[]) {
+  const pairs = buildPairs(players);
+
+  return [
+    bestPair("Stat Twins", pairs, (pair) => -pair.distance, "Closest overall profile. Same braincell queue."),
+    bestPair("Carry + Chaos", pairs, (pair) => pair.kdGap + pair.winGap / 10, "Maximum stat contrast. One plants, one has excuses."),
+    bestPair("Rank Crime Duo", pairs, (pair) => pair.rankGap, "Biggest RP gap. Matchmaking should file a report."),
+    bestPair("Balanced Duo", pairs, (pair) => -pair.rankGap - pair.kdGap * 250, "Closest rank and K/D. Least likely to blame each other."),
+  ].filter((pair) => pair.names !== "--");
 }
 
 function leaderboard(
@@ -262,6 +367,23 @@ function maxPlayer(players: NormalizedPlayerStats[], key: keyof NormalizedPlayer
   }, null);
 }
 
+function minPlayer(players: NormalizedPlayerStats[], key: keyof NormalizedPlayerStats) {
+  return players.reduce<NormalizedPlayerStats | null>((best, player) => {
+    const value = player[key];
+    const bestValue = best?.[key];
+
+    if (typeof value !== "number") {
+      return best;
+    }
+
+    if (typeof bestValue !== "number" || value < bestValue) {
+      return player;
+    }
+
+    return best;
+  }, null);
+}
+
 function sumMetric(players: NormalizedPlayerStats[], key: keyof NormalizedPlayerStats) {
   const values = players
     .map((player) => player[key])
@@ -272,6 +394,201 @@ function sumMetric(players: NormalizedPlayerStats[], key: keyof NormalizedPlayer
   }
 
   return values.reduce((total, value) => total + value, 0);
+}
+
+function averageMetric(players: NormalizedPlayerStats[], key: keyof NormalizedPlayerStats) {
+  const values = players
+    .map((player) => player[key])
+    .filter((value): value is number => typeof value === "number");
+
+  if (values.length === 0) {
+    return null;
+  }
+
+  return values.reduce((total, value) => total + value, 0) / values.length;
+}
+
+function spreadMetric(players: NormalizedPlayerStats[], key: keyof NormalizedPlayerStats) {
+  const values = players
+    .map((player) => player[key])
+    .filter((value): value is number => typeof value === "number");
+
+  if (values.length < 2) {
+    return null;
+  }
+
+  return Math.max(...values) - Math.min(...values);
+}
+
+function getSquadIdentity(
+  avgKd: number | null,
+  avgWin: number | null,
+  rankSpread: number | null,
+) {
+  if (avgKd !== null && avgKd >= 1.15 && avgWin !== null && avgWin >= 55) {
+    return {
+      title: "War Room",
+      caption: "Good K/D and good win rate. Annoyingly competent.",
+    };
+  }
+
+  if (rankSpread !== null && rankSpread > 1200) {
+    return {
+      title: "Boosting Allegations",
+      caption: "The RP spread is wide enough to need a court statement.",
+    };
+  }
+
+  if (avgKd !== null && avgKd >= 1.1) {
+    return {
+      title: "Aim Lab Lobby",
+      caption: "Kills are happening. Whether rounds are won is a separate investigation.",
+    };
+  }
+
+  if (avgWin !== null && avgWin >= 52) {
+    return {
+      title: "Rat Stack",
+      caption: "Not always pretty, somehow still winning.",
+    };
+  }
+
+  return {
+    title: "Content Stack",
+    caption: "Statistically built for entertainment.",
+  };
+}
+
+function findMostImproved(history: PlayerSnapshot[], key: keyof PlayerSnapshot) {
+  const grouped = groupSnapshots(history, key);
+  let best: { name: string; delta: number } | null = null;
+
+  for (const [playerKey, snapshots] of grouped) {
+    if (snapshots.length < 2) {
+      continue;
+    }
+
+    const delta = snapshots[snapshots.length - 1].value - snapshots[0].value;
+    const name = playerNameFromKey(playerKey);
+
+    if (delta > 0 && (!best || delta > best.delta)) {
+      best = { name, delta };
+    }
+  }
+
+  return best;
+}
+
+function findMostVolatile(history: PlayerSnapshot[], key: keyof PlayerSnapshot) {
+  const grouped = groupSnapshots(history, key);
+  let best: { name: string; range: number } | null = null;
+
+  for (const [playerKey, snapshots] of grouped) {
+    if (snapshots.length < 2) {
+      continue;
+    }
+
+    const values = snapshots.map((snapshot) => snapshot.value);
+    const range = Math.max(...values) - Math.min(...values);
+    const name = playerNameFromKey(playerKey);
+
+    if (!best || range > best.range) {
+      best = { name, range };
+    }
+  }
+
+  return best;
+}
+
+function groupSnapshots(history: PlayerSnapshot[], key: keyof PlayerSnapshot) {
+  const grouped = new Map<string, Array<{ value: number; fetchedAt: string }>>();
+
+  for (const snapshot of history) {
+    const value = snapshot[key];
+
+    if (typeof value !== "number") {
+      continue;
+    }
+
+    const list = grouped.get(snapshot.playerKey) ?? [];
+    list.push({ value, fetchedAt: snapshot.fetchedAt });
+    grouped.set(snapshot.playerKey, list);
+  }
+
+  for (const list of grouped.values()) {
+    list.sort((a, b) => new Date(a.fetchedAt).getTime() - new Date(b.fetchedAt).getTime());
+  }
+
+  return grouped;
+}
+
+function playerNameFromKey(playerKey: string) {
+  return playerKey
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part[0]?.toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+type Pair = {
+  names: string;
+  kdGap: number;
+  winGap: number;
+  rankGap: number;
+  distance: number;
+};
+
+function buildPairs(players: NormalizedPlayerStats[]): Pair[] {
+  const pairs: Pair[] = [];
+
+  for (let left = 0; left < players.length; left += 1) {
+    for (let right = left + 1; right < players.length; right += 1) {
+      const a = players[left];
+      const b = players[right];
+      const kdGap = metricGap(a.kd, b.kd);
+      const winGap = metricGap(a.winRate, b.winRate);
+      const rankGap = metricGap(a.rankPoints, b.rankPoints);
+
+      pairs.push({
+        names: `${a.displayName} + ${b.displayName}`,
+        kdGap,
+        winGap,
+        rankGap,
+        distance: kdGap * 250 + winGap * 8 + rankGap,
+      });
+    }
+  }
+
+  return pairs;
+}
+
+function bestPair(
+  label: string,
+  pairs: Pair[],
+  scorer: (pair: Pair) => number,
+  reason: string,
+) {
+  const pair = pairs.reduce<Pair | null>((best, current) => {
+    if (!best || scorer(current) > scorer(best)) {
+      return current;
+    }
+
+    return best;
+  }, null);
+
+  return {
+    label,
+    names: pair?.names ?? "--",
+    reason,
+  };
+}
+
+function metricGap(left: number | null, right: number | null) {
+  if (left === null || right === null) {
+    return 0;
+  }
+
+  return Math.abs(left - right);
 }
 
 function buildChartData(history: PlayerSnapshot[]) {

@@ -55,7 +55,7 @@ export type SquadResponse = {
   canRefresh: boolean;
   cooldownEndsAt: string | null;
   lastUpdatedAt: string | null;
-  source: "supabase" | "live" | "empty";
+  source: "redis" | "live" | "empty";
   warnings: string[];
 };
 

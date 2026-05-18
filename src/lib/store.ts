@@ -1,50 +1,41 @@
 import { friends, refreshCooldownMinutes } from "@/config/friends";
 import { fetchR6DataBundle } from "@/lib/r6data";
-import { getSupabaseAdmin } from "@/lib/supabase";
+import { getRedis } from "@/lib/redis";
 import type { NormalizedPlayerStats, PlayerSnapshot, SquadResponse } from "@/lib/types";
 import { normalizePlayerStats } from "@/lib/normalize";
+
+const latestKey = "r6:squad:latest";
+const historyKey = "r6:squad:history";
+const historyLimit = 200;
 
 let memoryLatest: NormalizedPlayerStats[] = [];
 let memoryHistory: PlayerSnapshot[] = [];
 let memoryLastRefreshAt: string | null = null;
 
 export async function getSquad(): Promise<SquadResponse> {
-  const supabase = getSupabaseAdmin();
+  const redis = getRedis();
   const warnings: string[] = [];
 
-  if (!supabase) {
-    warnings.push("Supabase is not configured. Showing in-memory data only.");
+  if (!redis) {
+    warnings.push("Upstash Redis is not configured. Showing in-memory data only.");
     return buildResponse(memoryLatest, memoryHistory, memoryLastRefreshAt, "empty", warnings);
   }
 
-  const [latestResult, historyResult] = await Promise.all([
-    supabase
-      .from("latest_player_stats")
-      .select("normalized, fetched_at")
-      .order("fetched_at", { ascending: false }),
-    supabase
-      .from("player_stat_snapshots")
-      .select("player_key, fetched_at, normalized")
-      .order("fetched_at", { ascending: true })
-      .limit(200),
-  ]);
+  try {
+    const [players, history] = await Promise.all([
+      redis.get<NormalizedPlayerStats[]>(latestKey),
+      redis.lrange<PlayerSnapshot>(historyKey, 0, historyLimit - 1),
+    ]);
 
-  if (latestResult.error) {
-    warnings.push(latestResult.error.message);
+    const latestPlayers = players ?? memoryLatest;
+    const snapshots = history?.reverse() ?? memoryHistory;
+    const lastUpdatedAt = newestFetchedAt(latestPlayers);
+
+    return buildResponse(latestPlayers, snapshots, lastUpdatedAt, "redis", warnings);
+  } catch (error) {
+    warnings.push(error instanceof Error ? error.message : String(error));
+    return buildResponse(memoryLatest, memoryHistory, memoryLastRefreshAt, "empty", warnings);
   }
-
-  if (historyResult.error) {
-    warnings.push(historyResult.error.message);
-  }
-
-  const players =
-    latestResult.data?.map((row) => row.normalized as NormalizedPlayerStats) ?? memoryLatest;
-  const history =
-    historyResult.data?.map((row) => toSnapshot(row.normalized as NormalizedPlayerStats)) ??
-    memoryHistory;
-  const lastUpdatedAt = newestFetchedAt(players);
-
-  return buildResponse(players, history, lastUpdatedAt, "supabase", warnings);
 }
 
 export async function refreshSquad(): Promise<{ squad: SquadResponse; status: number }> {
@@ -85,53 +76,30 @@ export async function refreshSquad(): Promise<{ squad: SquadResponse; status: nu
     };
   }
 
-  const supabase = getSupabaseAdmin();
+  const redis = getRedis();
   const players = refreshed.map(({ normalized }) => normalized);
   const history = players.map(toSnapshot);
 
   memoryLatest = mergeLatest(memoryLatest, players);
-  memoryHistory = [...memoryHistory, ...history].slice(-200);
+  memoryHistory = [...memoryHistory, ...history].slice(-historyLimit);
   memoryLastRefreshAt = fetchedAt;
 
-  if (supabase) {
-    const latestRows = refreshed.map(({ friend, normalized, raw }) => ({
-      player_key: friend.key,
-      display_name: friend.displayName,
-      platform_type: friend.platformType,
-      platform_family: friend.platformFamily,
-      normalized,
-      raw,
-      fetched_at: fetchedAt,
-    }));
-
-    const snapshotRows = latestRows.map(({ player_key, display_name, platform_type, platform_family, normalized, raw, fetched_at }) => ({
-      player_key,
-      display_name,
-      platform_type,
-      platform_family,
-      normalized,
-      raw,
-      fetched_at,
-    }));
-
-    const [upsertResult, insertResult] = await Promise.all([
-      supabase.from("latest_player_stats").upsert(latestRows, { onConflict: "player_key" }),
-      supabase.from("player_stat_snapshots").insert(snapshotRows),
-    ]);
-
-    if (upsertResult.error) {
-      warnings.push(upsertResult.error.message);
-    }
-
-    if (insertResult.error) {
-      warnings.push(insertResult.error.message);
+  if (redis) {
+    try {
+      await Promise.all([
+        redis.set(latestKey, memoryLatest),
+        redis.lpush(historyKey, ...history),
+        redis.ltrim(historyKey, 0, historyLimit - 1),
+      ]);
+    } catch (error) {
+      warnings.push(error instanceof Error ? error.message : String(error));
     }
   } else {
-    warnings.push("Supabase is not configured. Refreshed data was not persisted.");
+    warnings.push("Upstash Redis is not configured. Refreshed data was not persisted.");
   }
 
   return {
-    squad: buildResponse(memoryLatest, memoryHistory, fetchedAt, supabase ? "supabase" : "live", warnings),
+    squad: buildResponse(memoryLatest, memoryHistory, fetchedAt, redis ? "redis" : "live", warnings),
     status: 200,
   };
 }

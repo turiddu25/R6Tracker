@@ -152,7 +152,7 @@ h1 {
 .heroPanel {
   display: flex;
   flex-direction: column;
-  justify-content: end;
+  justify-content: flex-end;
   border-radius: 34px;
   padding: 28px;
   background:
@@ -289,13 +289,26 @@ h1 {
 }
 
 .leaderboards,
-.awards {
+.awards,
+.intelGrid,
+.chemistryGrid {
   display: grid;
   gap: 12px;
 }
 
+.intelGrid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.chemistryGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 18px;
+}
+
 .leaderboard,
-.award {
+.award,
+.intelCard,
+.chemistryCard {
   display: grid;
   grid-template-columns: 1fr auto auto;
   gap: 16px;
@@ -304,16 +317,48 @@ h1 {
   padding: 0 0 12px;
 }
 
-.award {
+.award,
+.intelCard,
+.chemistryCard {
   grid-template-columns: 1fr auto;
 }
 
-.award small {
+.award small,
+.intelCard small,
+.chemistryCard small {
   grid-column: 1 / -1;
 }
 
+.intelCard,
+.chemistryCard {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 16px;
+  background:
+    linear-gradient(145deg, rgba(245, 197, 66, 0.08), transparent),
+    rgba(255, 246, 221, 0.05);
+}
+
+.intelCard span,
+.chemistryCard span {
+  color: var(--faded);
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.intelCard strong,
+.chemistryCard strong {
+  font-family: var(--font-display), serif;
+  font-size: 1.45rem;
+  letter-spacing: -0.04em;
+}
+
 .leaderboard strong,
-.award strong {
+.award strong,
+.intelCard strong,
+.chemistryCard strong {
   color: var(--gold);
 }
 
@@ -348,6 +393,11 @@ h1 {
     flex-direction: column;
   }
 
+  .intelGrid,
+  .chemistryGrid {
+    grid-template-columns: 1fr;
+  }
+
   .heroPanel strong {
     font-size: 3.5rem;
   }
@@ -370,7 +420,9 @@ h1 {
 
   .statGrid,
   .leaderboard,
-  .award {
+  .award,
+  .intelCard,
+  .chemistryCard {
     grid-template-columns: 1fr 1fr;
   }
 

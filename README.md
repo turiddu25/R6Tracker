@@ -1,11 +1,11 @@
 # R6 Friends Tracker
 
-A private-by-convention Rainbow Six Siege squad dashboard for Vercel + Supabase.
+A private-by-convention Rainbow Six Siege squad dashboard for Vercel + Upstash Redis.
 
 ## Setup
 
 1. Create a free API key at <https://r6data.eu>.
-2. Create a Supabase project and run `supabase/schema.sql` in the SQL editor.
+2. In Vercel Marketplace, add Upstash Redis to the project.
 3. Copy `.env.example` to `.env.local` and fill in the values.
 4. Edit the friend list in `src/config/friends.ts`.
 5. Install dependencies and run locally:
@@ -15,8 +15,24 @@ npm install
 npm run dev
 ```
 
+## Before pushing
+
+Run the fast local gate every time:
+
+```powershell
+npm run verify
+```
+
+Before pushing to Vercel, run the full production check:
+
+```powershell
+npm run prepush
+```
+
+If `npm run dev` or `npm run build` fails with `spawn EPERM` inside Codex, run it from your normal PowerShell/VS Code terminal. Next.js spawns worker Node processes and the Codex sandbox can block that, even when the app itself is valid.
+
 ## Deployment
 
-Deploy to Vercel and add the same environment variables there. Keep `R6DATA_API_KEY` and `SUPABASE_SERVICE_ROLE_KEY` server-only; never expose them as `NEXT_PUBLIC_*`.
+Deploy to Vercel and add the same environment variables there. Keep `R6DATA_API_KEY` and `UPSTASH_REDIS_REST_TOKEN` server-only; never expose them as `NEXT_PUBLIC_*`.
 
-The app serves cached Supabase data by default. The refresh button calls R6Data, updates the latest rows, and appends historical snapshots.
+The app serves cached Redis data by default. The refresh button calls R6Data, updates the latest squad cache, and appends historical snapshots.
