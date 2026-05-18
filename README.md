@@ -33,6 +33,8 @@ If `npm run dev` or `npm run build` fails with `spawn EPERM` inside Codex, run i
 
 ## Deployment
 
-Deploy to Vercel and add the same environment variables there. Keep `R6DATA_API_KEY` and `UPSTASH_REDIS_REST_TOKEN` server-only; never expose them as `NEXT_PUBLIC_*`.
+Deploy to Vercel and add the same environment variables there. Keep `R6DATA_API_KEY` and `KV_REST_API_TOKEN` server-only; never expose them as `NEXT_PUBLIC_*`.
+
+Vercel's Upstash integration usually creates `KV_REST_API_URL` and `KV_REST_API_TOKEN` automatically. The app also accepts `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` if you prefer those names.
 
 The app serves cached Redis data by default. The refresh button calls R6Data, updates the latest squad cache, and appends historical snapshots.
