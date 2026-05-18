@@ -1,5 +1,6 @@
 import type { FriendConfig, NormalizedPlayerStats, R6DataBundle } from "@/lib/types";
 import { asNumber, round } from "@/lib/number";
+import { getSeasonForDate } from "@/config/seasons";
 
 type MatchCandidate = {
   score: number;
@@ -28,6 +29,7 @@ export function normalizePlayerStats(
   bundle: R6DataBundle,
   fetchedAt = new Date().toISOString(),
 ): NormalizedPlayerStats {
+  const season = getSeasonForDate(fetchedAt);
   const statsCandidate = findBestStatsObject(bundle.stats);
   const seasonalCandidate = findBestRankObject(bundle.seasonalStats);
   const stats = statsCandidate?.data ?? {};
@@ -67,6 +69,8 @@ export function normalizePlayerStats(
     accent: friend.accent,
     avatarUrl: friend.avatarUrl,
     fetchedAt,
+    seasonKey: season.key,
+    seasonName: season.name,
     rank,
     rankImageUrl,
     rankPoints: pickNumber(seasonal, metricAliases.rankPoints) ?? pickNumber(stats, metricAliases.rankPoints),

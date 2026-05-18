@@ -133,6 +133,18 @@ h1 {
   margin-top: 28px;
 }
 
+.seasonPill {
+  display: inline-flex;
+  width: fit-content;
+  border: 1px solid rgba(245, 197, 66, 0.34);
+  border-radius: 999px;
+  padding: 0.5rem 0.85rem;
+  background: rgba(245, 197, 66, 0.1);
+  color: var(--gold) !important;
+  font-size: 0.9rem !important;
+  font-weight: 900;
+}
+
 .heroActions span,
 .status,
 .panel p,

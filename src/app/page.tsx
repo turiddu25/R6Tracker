@@ -20,6 +20,8 @@ const emptyResponse: SquadResponse = {
   cooldownEndsAt: null,
   lastUpdatedAt: null,
   source: "empty",
+  activeSeasonKey: "unknown",
+  activeSeasonName: "Unknown Season",
   warnings: [],
 };
 
@@ -76,6 +78,7 @@ export default function Home() {
             A public squad dashboard backed by cached R6Data snapshots. Hit refresh
             when you want the latest numbers; the page stays fast from Redis cache.
           </p>
+          <p className="seasonPill">Current split: {squad.activeSeasonName}</p>
           <div className="heroActions">
             <button disabled={isPending || !squad.canRefresh} onClick={refresh}>
               {isPending ? "Breaching R6Data..." : squad.canRefresh ? "Refresh Stats" : "Cooldown Active"}
@@ -160,7 +163,7 @@ export default function Home() {
 
       <section className="panel chartPanel">
         <h2>RP Timeline</h2>
-        <p>Snapshots appear here after refreshes over time.</p>
+        <p>Showing only {squad.activeSeasonName} snapshots, so new seasons start clean.</p>
         <div className="chart">
           <ResponsiveContainer width="100%" height={320}>
             <AreaChart data={chartData}>

@@ -22,6 +22,8 @@ export type NormalizedPlayerStats = {
   accent: string;
   avatarUrl?: string;
   fetchedAt: string;
+  seasonKey: string;
+  seasonName: string;
   rank: string | null;
   rankImageUrl: string | null;
   rankPoints: StatValue;
@@ -43,6 +45,8 @@ export type NormalizedPlayerStats = {
 export type PlayerSnapshot = {
   playerKey: string;
   fetchedAt: string;
+  seasonKey: string;
+  seasonName: string;
   kd: StatValue;
   winRate: StatValue;
   rankPoints: StatValue;
@@ -55,6 +59,8 @@ export type SquadResponse = {
   canRefresh: boolean;
   cooldownEndsAt: string | null;
   lastUpdatedAt: string | null;
+  activeSeasonKey: string;
+  activeSeasonName: string;
   source: "redis" | "live" | "empty";
   warnings: string[];
 };

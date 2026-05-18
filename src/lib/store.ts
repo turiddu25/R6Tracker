@@ -1,4 +1,5 @@
 import { friends, refreshCooldownMinutes } from "@/config/friends";
+import { getSeasonForDate } from "@/config/seasons";
 import { fetchR6DataBundle } from "@/lib/r6data";
 import { getRedis } from "@/lib/redis";
 import type { NormalizedPlayerStats, PlayerSnapshot, SquadResponse } from "@/lib/types";
@@ -28,7 +29,7 @@ export async function getSquad(): Promise<SquadResponse> {
     ]);
 
     const latestPlayers = players ?? memoryLatest;
-    const snapshots = history?.reverse() ?? memoryHistory;
+    const snapshots = normalizeSnapshots(history?.reverse() ?? memoryHistory);
     const lastUpdatedAt = newestFetchedAt(latestPlayers);
 
     return buildResponse(latestPlayers, snapshots, lastUpdatedAt, "redis", warnings);
@@ -112,13 +113,21 @@ function buildResponse(
   warnings: string[],
 ): SquadResponse {
   const cooldownEndsAt = getCooldownEndsAt(lastUpdatedAt);
+  const activeSeason = getSeasonForDate();
+  const normalizedPlayers = normalizePlayers(players);
+  const normalizedHistory = normalizeSnapshots(history);
+  const activeHistory = normalizedHistory.filter(
+    (snapshot) => snapshot.seasonKey === activeSeason.key,
+  );
 
   return {
-    players: sortLikeConfig(players),
-    history,
+    players: sortLikeConfig(normalizedPlayers),
+    history: activeHistory,
     canRefresh: cooldownEndsAt === null || Date.now() >= new Date(cooldownEndsAt).getTime(),
     cooldownEndsAt,
     lastUpdatedAt,
+    activeSeasonKey: activeSeason.key,
+    activeSeasonName: activeSeason.name,
     source,
     warnings,
   };
@@ -147,14 +156,42 @@ function newestFetchedAt(players: NormalizedPlayerStats[]) {
 }
 
 function toSnapshot(player: NormalizedPlayerStats): PlayerSnapshot {
+  const season = getSeasonForDate(player.fetchedAt);
+
   return {
     playerKey: player.playerKey,
     fetchedAt: player.fetchedAt,
+    seasonKey: player.seasonKey ?? season.key,
+    seasonName: player.seasonName ?? season.name,
     kd: player.kd,
     winRate: player.winRate,
     rankPoints: player.rankPoints,
     matches: player.matches,
   };
+}
+
+function normalizePlayers(players: NormalizedPlayerStats[]) {
+  return players.map((player) => {
+    const season = getSeasonForDate(player.fetchedAt);
+
+    return {
+      ...player,
+      seasonKey: player.seasonKey ?? season.key,
+      seasonName: player.seasonName ?? season.name,
+    };
+  });
+}
+
+function normalizeSnapshots(history: PlayerSnapshot[]) {
+  return history.map((snapshot) => {
+    const season = getSeasonForDate(snapshot.fetchedAt);
+
+    return {
+      ...snapshot,
+      seasonKey: snapshot.seasonKey ?? season.key,
+      seasonName: snapshot.seasonName ?? season.name,
+    };
+  });
 }
 
 function mergeLatest(
