@@ -58,6 +58,58 @@ main {
   padding: 42px 0 64px;
 }
 
+.adminShell {
+  display: grid;
+  gap: 22px;
+}
+
+.adminPanel {
+  border: 1px solid var(--line);
+  border-radius: 34px;
+  padding: clamp(24px, 5vw, 54px);
+  background: var(--panel);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+}
+
+.adminPanel h1 {
+  max-width: 720px;
+  margin: 0.2rem 0 1rem;
+  font-size: clamp(2.5rem, 6vw, 5.5rem);
+  line-height: 0.9;
+  letter-spacing: -0.08em;
+}
+
+.adminPanel > p:not(.eyebrow):not(.status) {
+  max-width: 690px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.adminLabel {
+  display: grid;
+  gap: 10px;
+  max-width: 520px;
+  margin-top: 26px;
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.adminLabel input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 0.95rem 1rem;
+  background: rgba(255, 246, 221, 0.08);
+  color: var(--text);
+  font: 800 1rem var(--font-body), sans-serif;
+}
+
+.jobGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
@@ -393,7 +445,8 @@ h1 {
 
 @media (max-width: 880px) {
   .hero,
-  .cardsGrid {
+  .cardsGrid,
+  .jobGrid {
     grid-template-columns: 1fr;
   }
 

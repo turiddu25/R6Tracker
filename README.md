@@ -38,3 +38,12 @@ Deploy to Vercel and add the same environment variables there. Keep `R6DATA_API_
 Vercel's Upstash integration usually creates `KV_REST_API_URL` and `KV_REST_API_TOKEN` automatically. The app also accepts `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` if you prefer those names.
 
 The app serves cached Redis data by default. The refresh button calls R6Data, updates the latest squad cache, and appends historical snapshots.
+
+## Manual Scraper Runs
+
+The `/admin` page can queue a local mini PC scraper run. Set `ADMIN_PASSWORD`
+and `SCRAPER_WORKER_TOKEN` in Vercel, then set the matching worker token in
+the mini PC `scraper-lab/.env`.
+
+The mini PC worker uses outbound HTTPS polling, so it does not need to expose a
+public port or use Cloudflared for this flow.
