@@ -2,18 +2,33 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import {
-  Area,
-  AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
-import type { NormalizedPlayerStats, PlayerSnapshot, SquadResponse } from "@/lib/types";
+import type { StoredMatchSummary } from "@/lib/matchTypes";
+import type { NormalizedPlayerStats, SquadResponse } from "@/lib/types";
+import {
+  buildMatchAnalytics,
+  type MatchFilters,
+  type StackFilter,
+  type TimeFilter,
+} from "@/lib/matchAnalytics";
 import { formatDecimal, formatNumber, formatPercent } from "@/lib/number";
 
-const emptyResponse: SquadResponse = {
+type MatchesResponse = {
+  activeSeasonKey: string;
+  activeSeasonName: string;
+  matches: StoredMatchSummary[];
+};
+
+const emptySquad: SquadResponse = {
   players: [],
   history: [],
   canRefresh: true,
@@ -25,26 +40,45 @@ const emptyResponse: SquadResponse = {
   warnings: [],
 };
 
+const emptyMatches: MatchesResponse = {
+  activeSeasonKey: "unknown",
+  activeSeasonName: "Unknown Season",
+  matches: [],
+};
+
 export default function Home() {
-  const [squad, setSquad] = useState<SquadResponse>(emptyResponse);
+  const [squad, setSquad] = useState<SquadResponse>(emptySquad);
+  const [matchData, setMatchData] = useState<MatchesResponse>(emptyMatches);
   const [error, setError] = useState<string | null>(null);
+  const [filters, setFilters] = useState<MatchFilters>({
+    stack: "all",
+    time: "week",
+    playlist: "all",
+    player: "all",
+  });
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
-    void loadSquad();
+    void loadDashboard();
   }, []);
 
-  async function loadSquad() {
+  async function loadDashboard() {
     setError(null);
-    const response = await fetch("/api/squad", { cache: "no-store" });
-    if (!response.ok) {
-      setError("Could not load cached squad data.");
+    const [squadResponse, matchesResponse] = await Promise.all([
+      fetch("/api/squad", { cache: "no-store" }),
+      fetch("/api/matches", { cache: "no-store" }),
+    ]);
+
+    if (!squadResponse.ok || !matchesResponse.ok) {
+      setError("Could not load dashboard data.");
       return;
     }
-    setSquad(await response.json());
+
+    setSquad(await squadResponse.json());
+    setMatchData(await matchesResponse.json());
   }
 
-  function refresh() {
+  function refreshStats() {
     startTransition(async () => {
       setError(null);
       const response = await fetch("/api/refresh", { method: "POST" });
@@ -54,557 +88,262 @@ export default function Home() {
       if (!response.ok && body.cooldownEndsAt) {
         setError(`Refresh cooldown active until ${formatTime(body.cooldownEndsAt)}.`);
       } else if (!response.ok) {
-        setError("Refresh failed.");
+        setError("R6Data refresh failed.");
       }
     });
   }
 
-  const leaderboards = useMemo(() => buildLeaderboards(squad.players), [squad.players]);
-  const awards = useMemo(() => buildAwards(squad.players), [squad.players]);
-  const squadIntel = useMemo(
-    () => buildSquadIntel(squad.players, squad.history),
-    [squad.players, squad.history],
+  const analytics = useMemo(
+    () => buildMatchAnalytics(matchData.matches, filters),
+    [matchData.matches, filters],
   );
-  const chemistry = useMemo(() => buildChemistry(squad.players), [squad.players]);
-  const chartData = useMemo(() => buildChartData(squad.history), [squad.history]);
+  const playerOptions = useMemo(() => {
+    const keys = new Map<string, string>();
+
+    for (const match of matchData.matches) {
+      for (const player of match.players) {
+        if (player.playerKey !== "unknown") {
+          keys.set(player.playerKey, player.displayName);
+        }
+      }
+    }
+
+    return [...keys.entries()];
+  }, [matchData.matches]);
 
   return (
     <main>
-      <section className="hero">
+      <section className="hero matchHero">
         <div className="heroCopy">
           <p className="eyebrow">R6 Squad Room</p>
-          <h1>Your stack, your stats, your slander board.</h1>
+          <h1>The Stack Lab.</h1>
           <p>
-            A public squad dashboard backed by cached R6Data snapshots. Hit refresh
-            when you want the latest numbers; the page stays fast from Redis cache.
+            Match-level filters for solo games, duo queues, trio queues,
+            four-stacks, and full-stack nights. The scraper runs locally; this
+            page only reads normalized match summaries.
           </p>
-          <p className="seasonPill">Current split: {squad.activeSeasonName}</p>
+          <p className="seasonPill">Current split: {matchData.activeSeasonName}</p>
           <div className="heroActions">
-            <button disabled={isPending || !squad.canRefresh} onClick={refresh}>
-              {isPending ? "Breaching R6Data..." : squad.canRefresh ? "Refresh Stats" : "Cooldown Active"}
+            <button disabled={isPending || !squad.canRefresh} onClick={refreshStats}>
+              {isPending ? "Refreshing..." : "Refresh R6Data"}
             </button>
-            <span>{squad.lastUpdatedAt ? `Updated ${formatTime(squad.lastUpdatedAt)}` : "No snapshot yet"}</span>
+            <button onClick={() => void loadDashboard()} type="button">
+              Reload Dashboard
+            </button>
+            <a className="adminLink" href="/admin">
+              Admin Scraper
+            </a>
           </div>
           {error ? <p className="status error">{error}</p> : null}
           {squad.warnings.map((warning) => (
-            <p className="status" key={warning}>
-              {warning}
-            </p>
+            <p className="status" key={warning}>{warning}</p>
           ))}
         </div>
         <div className="heroPanel">
-          <span>Total Kills</span>
-          <strong>{formatNumber(sumMetric(squad.players, "kills"))}</strong>
-          <small>{squad.players.length} operators in the stack</small>
+          <span>Filtered Matches</span>
+          <strong>{formatNumber(analytics.totals.matches)}</strong>
+          <small>{analytics.totals.fullStackMatches} full-stack games found</small>
         </div>
       </section>
 
-      <section className="cardsGrid">
-        {squad.players.length === 0 ? <EmptyState /> : null}
-        {squad.players.map((player) => (
-          <PlayerCard key={player.playerKey} player={player} />
-        ))}
+      <section className="filterDock panel">
+        <FilterGroup
+          label="Stack"
+          value={filters.stack}
+          options={[
+            ["all", "All"],
+            ["solo", "Solo"],
+            ["duo", "Duo"],
+            ["trio", "Trio"],
+            ["four", "4-Stack"],
+            ["full", "Full"],
+          ]}
+          onChange={(value) => setFilters((current) => ({ ...current, stack: value as StackFilter }))}
+        />
+        <FilterGroup
+          label="Time"
+          value={filters.time}
+          options={[
+            ["all", "All"],
+            ["today", "24h"],
+            ["week", "7d"],
+          ]}
+          onChange={(value) => setFilters((current) => ({ ...current, time: value as TimeFilter }))}
+        />
+        <FilterGroup
+          label="Playlist"
+          value={filters.playlist}
+          options={[["all", "All"], ...analytics.playlists.map((playlist) => [playlist, playlist] as const)]}
+          onChange={(value) => setFilters((current) => ({ ...current, playlist: value }))}
+        />
+        <FilterGroup
+          label="Player"
+          value={filters.player}
+          options={[["all", "All"], ...playerOptions.map(([key, name]) => [key, name] as const)]}
+          onChange={(value) => setFilters((current) => ({ ...current, player: value }))}
+        />
+      </section>
+
+      <section className="intelGrid">
+        <Kpi label="W/L" value={`${analytics.totals.wins}-${analytics.totals.losses}`} caption={formatPercent(analytics.totals.winRate)} />
+        <Kpi label="Squad K/D" value={formatDecimal(analytics.totals.kd)} caption={`${formatNumber(analytics.totals.kills)}K / ${formatNumber(analytics.totals.deaths)}D`} />
+        <Kpi label="RP Swing" value={signed(analytics.totals.rpDelta)} caption="Combined filtered ranked delta" />
+        <Kpi label="Stacked Games" value={formatNumber(analytics.totals.duoMatches + analytics.totals.trioMatches + analytics.totals.fourStackMatches + analytics.totals.fullStackMatches)} caption="Duo or bigger" />
       </section>
 
       <section className="splitSection">
         <div className="panel">
-          <h2>Leaderboard</h2>
-          <div className="leaderboards">
-            {leaderboards.map((board) => (
-              <div className="leaderboard" key={board.label}>
-                <span>{board.label}</span>
-                <strong>{board.winner?.displayName ?? "--"}</strong>
-                <small>{board.value}</small>
+          <h2>Stack Performance</h2>
+          <div className="stackBars">
+            {analytics.stackBreakdown.map((stack) => (
+              <div className="stackBar" key={stack.label}>
+                <div>
+                  <strong>{stack.label}</strong>
+                  <span>{stack.matches} matches</span>
+                </div>
+                <div className="barTrack">
+                  <div style={{ width: `${Math.min(stack.winRate ?? 0, 100)}%` }} />
+                </div>
+                <small>{formatPercent(stack.winRate)} win | {formatDecimal(stack.kd)} K/D | {signed(stack.rpDelta)} RP</small>
               </div>
             ))}
           </div>
         </div>
         <div className="panel awards">
-          <h2>Completely Scientific Awards</h2>
-          {awards.map((award) => (
+          <h2>Squad Crimes</h2>
+          {analytics.awards.map((award) => (
             <div className="award" key={award.title}>
               <span>{award.title}</span>
-              <strong>{award.player?.displayName ?? "--"}</strong>
-              <small>{award.reason}</small>
+              <strong>{award.value}</strong>
+              <small>{award.caption}</small>
             </div>
           ))}
         </div>
       </section>
 
-      <section className="panel">
-        <h2>Squad Intel</h2>
-        <div className="intelGrid">
-          {squadIntel.map((item) => (
-            <div className="intelCard" key={item.label}>
-              <span>{item.label}</span>
-              <strong>{item.value}</strong>
-              <small>{item.caption}</small>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="panel">
-        <h2>Questionable Chemistry Lab</h2>
-        <p>
-          Not real match correlation yet. This ranks pair vibes from current stat profiles,
-          so it is useful enough for arguments and bad enough to be funny.
-        </p>
-        <div className="chemistryGrid">
-          {chemistry.map((pair) => (
-            <div className="chemistryCard" key={pair.names}>
-              <span>{pair.label}</span>
-              <strong>{pair.names}</strong>
-              <small>{pair.reason}</small>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="panel chartPanel">
-        <h2>RP Timeline</h2>
-        <p>Showing only {squad.activeSeasonName} snapshots, so new seasons start clean.</p>
-        <div className="chart">
-          <ResponsiveContainer width="100%" height={320}>
-            <AreaChart data={chartData}>
-              <defs>
-                <linearGradient id="rpGradient" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stopColor="#f5c542" stopOpacity={0.8} />
-                  <stop offset="100%" stopColor="#f5c542" stopOpacity={0.05} />
-                </linearGradient>
-              </defs>
+      <section className="chartGrid">
+        <div className="panel chartPanel">
+          <h2>Daily RP Damage</h2>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={analytics.daily}>
               <CartesianGrid stroke="rgba(255,255,255,.12)" vertical={false} />
               <XAxis dataKey="label" stroke="#d8d0b8" />
               <YAxis stroke="#d8d0b8" />
               <Tooltip contentStyle={{ background: "#171713", border: "1px solid #393426" }} />
-              <Area type="monotone" dataKey="rankPoints" stroke="#f5c542" fill="url(#rpGradient)" />
-            </AreaChart>
+              <Bar dataKey="rpDelta" fill="#f5c542" radius={[8, 8, 0, 0]} />
+            </BarChart>
           </ResponsiveContainer>
+        </div>
+        <div className="panel chartPanel">
+          <h2>Games Per Day</h2>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={analytics.daily}>
+              <CartesianGrid stroke="rgba(255,255,255,.12)" vertical={false} />
+              <XAxis dataKey="label" stroke="#d8d0b8" />
+              <YAxis stroke="#d8d0b8" />
+              <Tooltip contentStyle={{ background: "#171713", border: "1px solid #393426" }} />
+              <Line type="monotone" dataKey="matches" stroke="#91ff9e" strokeWidth={3} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </section>
+
+      <section className="splitSection">
+        <div className="panel">
+          <h2>Player Form</h2>
+          <div className="playerRows">
+            {analytics.players.map((player) => (
+              <div className="playerRow" key={player.playerKey}>
+                <strong>{player.displayName}</strong>
+                <span>{player.matches} games</span>
+                <span>{formatDecimal(player.kd)} K/D</span>
+                <span>{formatPercent(player.winRate)} win</span>
+                <span>{signed(player.rpDelta)} RP</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="panel">
+          <h2>Map Court</h2>
+          <div className="mapGrid">
+            {analytics.maps.map((map) => (
+              <div className="mapCard" key={map.map}>
+                <strong>{map.map}</strong>
+                <span>{map.matches} games</span>
+                <small>{formatPercent(map.winRate)} win | {formatDecimal(map.kd)} K/D</small>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="panel">
+        <h2>Recent Match Feed</h2>
+        <div className="matchFeed">
+          {analytics.latestMatches.length === 0 ? <EmptyMatches /> : null}
+          {analytics.latestMatches.map((match) => (
+            <article className="matchRow" key={match.id}>
+              <div>
+                <strong>{match.map ?? "Unknown Map"}</strong>
+                <span>{formatTime(match.startedAt)} | {match.playlist ?? "Unknown"} | {match.score ?? "--"}</span>
+              </div>
+              <div>
+                <strong className={match.result === "win" ? "winText" : match.result === "loss" ? "lossText" : ""}>{match.result.toUpperCase()}</strong>
+                <span>{match.stack.stackSize}-stack | {match.confidence}</span>
+              </div>
+              <small>{match.stack.stackPlayerKeys.join(", ") || "unknown stack"}</small>
+            </article>
+          ))}
         </div>
       </section>
     </main>
   );
 }
 
-function PlayerCard({ player }: { player: NormalizedPlayerStats }) {
+function FilterGroup({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: ReadonlyArray<readonly [string, string]>;
+  onChange: (value: string) => void;
+}) {
   return (
-    <article className="playerCard" style={{ "--accent": player.accent } as React.CSSProperties}>
-      <div className="cardTop">
-        <div>
-          <span className="username">{player.username}</span>
-          <h2>{player.displayName}</h2>
-        </div>
-        {player.rankImageUrl ? <img alt="" src={player.rankImageUrl} /> : <div className="rankBadge">R6</div>}
-      </div>
-      <div className="rankLine">
-        <strong>{player.rank ?? "Unranked"}</strong>
-        <span>{formatNumber(player.rankPoints)} RP</span>
-      </div>
-      <div className="statGrid">
-        <Metric label="K/D" value={formatDecimal(player.kd)} />
-        <Metric label="Win" value={formatPercent(player.winRate)} />
-        <Metric label="Kills" value={formatNumber(player.kills)} />
-        <Metric label="Deaths" value={formatNumber(player.deaths)} />
-        <Metric label="Headshots" value={formatPercent(player.headshotRate)} />
-        <Metric label="Hours" value={formatNumber(player.playtimeHours)} />
-      </div>
-    </article>
+    <label className="filterGroup">
+      <span>{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        {options.map(([optionValue, optionLabel]) => (
+          <option key={optionValue} value={optionValue}>{optionLabel}</option>
+        ))}
+      </select>
+    </label>
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Kpi({ label, value, caption }: { label: string; value: string; caption: string }) {
   return (
-    <div className="metric">
+    <div className="intelCard kpiCard">
       <span>{label}</span>
       <strong>{value}</strong>
+      <small>{caption}</small>
     </div>
   );
 }
 
-function EmptyState() {
+function EmptyMatches() {
   return (
-    <article className="emptyState">
-      <h2>No cached squad stats yet.</h2>
-      <p>
-        Add your R6Data key and Upstash Redis credentials, then press refresh.
-      </p>
-    </article>
+    <div className="emptyState">
+      <h2>No ingested matches yet.</h2>
+      <p>Start the mini PC worker, open `/admin`, and run the scraper after a session.</p>
+    </div>
   );
 }
 
-function buildLeaderboards(players: NormalizedPlayerStats[]) {
-  return [
-    leaderboard("Best K/D", players, "kd", (value) => formatDecimal(value)),
-    leaderboard("Highest Win Rate", players, "winRate", (value) => formatPercent(value)),
-    leaderboard("Most Kills", players, "kills", (value) => formatNumber(value)),
-    leaderboard("Most Games", players, "matches", (value) => formatNumber(value)),
-  ];
-}
-
-function buildAwards(players: NormalizedPlayerStats[]) {
-  const deaths = maxPlayer(players, "deaths");
-  const assists = maxPlayer(players, "assists");
-  const hs = maxPlayer(players, "headshotRate");
-  const hours = maxPlayer(players, "playtimeHours");
-
-  return [
-    {
-      title: "Walking Respawn Timer",
-      player: deaths,
-      reason: deaths ? `${formatNumber(deaths.deaths)} recorded deaths` : "Needs data",
-    },
-    {
-      title: "Professional Helpful Guy",
-      player: assists,
-      reason: assists ? `${formatNumber(assists.assists)} assists` : "Needs data",
-    },
-    {
-      title: "Forehead Magnet",
-      player: hs,
-      reason: hs ? `${formatPercent(hs.headshotRate)} headshot rate` : "Needs data",
-    },
-    {
-      title: "Ranked Landlord",
-      player: hours,
-      reason: hours ? `${formatNumber(hours.playtimeHours)} hours played` : "Needs data",
-    },
-    {
-      title: "K/D Merchant",
-      player: maxPlayer(players, "kd"),
-      reason: "Probably says stats do not matter after every death",
-    },
-    {
-      title: "Morale Officer",
-      player: minPlayer(players, "kd"),
-      reason: "Keeps the enemy team confident",
-    },
-  ];
-}
-
-function buildSquadIntel(players: NormalizedPlayerStats[], history: PlayerSnapshot[]) {
-  const avgKd = averageMetric(players, "kd");
-  const avgWin = averageMetric(players, "winRate");
-  const totalMatches = sumMetric(players, "matches");
-  const totalHours = sumMetric(players, "playtimeHours");
-  const rankSpread = spreadMetric(players, "rankPoints");
-  const mostImproved = findMostImproved(history, "rankPoints");
-  const volatile = findMostVolatile(history, "rankPoints");
-  const identity = getSquadIdentity(avgKd, avgWin, rankSpread);
-
-  return [
-    {
-      label: "Stack Identity",
-      value: identity.title,
-      caption: identity.caption,
-    },
-    {
-      label: "Average K/D",
-      value: formatDecimal(avgKd),
-      caption: "The number everyone quotes until they lose two rounds.",
-    },
-    {
-      label: "Average Win Rate",
-      value: formatPercent(avgWin),
-      caption: "The squad's collective ability to not throw match point.",
-    },
-    {
-      label: "Rank Spread",
-      value: rankSpread === null ? "--" : `${formatNumber(rankSpread)} RP`,
-      caption: "Lower means balanced stack. Higher means someone is babysitting.",
-    },
-    {
-      label: "Total Grind",
-      value: totalHours === null ? "--" : `${formatNumber(totalHours)}h`,
-      caption: `${formatNumber(totalMatches)} tracked matches across the five-stack.`,
-    },
-    {
-      label: "Most Improved",
-      value: mostImproved?.name ?? "--",
-      caption: mostImproved ? `Up ${formatNumber(mostImproved.delta)} RP across snapshots.` : "Needs more snapshots.",
-    },
-    {
-      label: "RP Rollercoaster",
-      value: volatile?.name ?? "--",
-      caption: volatile ? `${formatNumber(volatile.range)} RP swing. Emotional damage likely.` : "Needs more snapshots.",
-    },
-  ];
-}
-
-function buildChemistry(players: NormalizedPlayerStats[]) {
-  const pairs = buildPairs(players);
-
-  return [
-    bestPair("Stat Twins", pairs, (pair) => -pair.distance, "Closest overall profile. Same braincell queue."),
-    bestPair("Carry + Chaos", pairs, (pair) => pair.kdGap + pair.winGap / 10, "Maximum stat contrast. One plants, one has excuses."),
-    bestPair("Rank Crime Duo", pairs, (pair) => pair.rankGap, "Biggest RP gap. Matchmaking should file a report."),
-    bestPair("Balanced Duo", pairs, (pair) => -pair.rankGap - pair.kdGap * 250, "Closest rank and K/D. Least likely to blame each other."),
-  ].filter((pair) => pair.names !== "--");
-}
-
-function leaderboard(
-  label: string,
-  players: NormalizedPlayerStats[],
-  key: keyof NormalizedPlayerStats,
-  formatter: (value: number | null) => string,
-) {
-  const winner = maxPlayer(players, key);
-  const value = winner ? formatter(winner[key] as number | null) : "--";
-
-  return { label, winner, value };
-}
-
-function maxPlayer(players: NormalizedPlayerStats[], key: keyof NormalizedPlayerStats) {
-  return players.reduce<NormalizedPlayerStats | null>((best, player) => {
-    const value = player[key];
-    const bestValue = best?.[key];
-
-    if (typeof value !== "number") {
-      return best;
-    }
-
-    if (typeof bestValue !== "number" || value > bestValue) {
-      return player;
-    }
-
-    return best;
-  }, null);
-}
-
-function minPlayer(players: NormalizedPlayerStats[], key: keyof NormalizedPlayerStats) {
-  return players.reduce<NormalizedPlayerStats | null>((best, player) => {
-    const value = player[key];
-    const bestValue = best?.[key];
-
-    if (typeof value !== "number") {
-      return best;
-    }
-
-    if (typeof bestValue !== "number" || value < bestValue) {
-      return player;
-    }
-
-    return best;
-  }, null);
-}
-
-function sumMetric(players: NormalizedPlayerStats[], key: keyof NormalizedPlayerStats) {
-  const values = players
-    .map((player) => player[key])
-    .filter((value): value is number => typeof value === "number");
-
-  if (values.length === 0) {
-    return null;
-  }
-
-  return values.reduce((total, value) => total + value, 0);
-}
-
-function averageMetric(players: NormalizedPlayerStats[], key: keyof NormalizedPlayerStats) {
-  const values = players
-    .map((player) => player[key])
-    .filter((value): value is number => typeof value === "number");
-
-  if (values.length === 0) {
-    return null;
-  }
-
-  return values.reduce((total, value) => total + value, 0) / values.length;
-}
-
-function spreadMetric(players: NormalizedPlayerStats[], key: keyof NormalizedPlayerStats) {
-  const values = players
-    .map((player) => player[key])
-    .filter((value): value is number => typeof value === "number");
-
-  if (values.length < 2) {
-    return null;
-  }
-
-  return Math.max(...values) - Math.min(...values);
-}
-
-function getSquadIdentity(
-  avgKd: number | null,
-  avgWin: number | null,
-  rankSpread: number | null,
-) {
-  if (avgKd !== null && avgKd >= 1.15 && avgWin !== null && avgWin >= 55) {
-    return {
-      title: "War Room",
-      caption: "Good K/D and good win rate. Annoyingly competent.",
-    };
-  }
-
-  if (rankSpread !== null && rankSpread > 1200) {
-    return {
-      title: "Boosting Allegations",
-      caption: "The RP spread is wide enough to need a court statement.",
-    };
-  }
-
-  if (avgKd !== null && avgKd >= 1.1) {
-    return {
-      title: "Aim Lab Lobby",
-      caption: "Kills are happening. Whether rounds are won is a separate investigation.",
-    };
-  }
-
-  if (avgWin !== null && avgWin >= 52) {
-    return {
-      title: "Rat Stack",
-      caption: "Not always pretty, somehow still winning.",
-    };
-  }
-
-  return {
-    title: "Content Stack",
-    caption: "Statistically built for entertainment.",
-  };
-}
-
-function findMostImproved(history: PlayerSnapshot[], key: keyof PlayerSnapshot) {
-  const grouped = groupSnapshots(history, key);
-  let best: { name: string; delta: number } | null = null;
-
-  for (const [playerKey, snapshots] of grouped) {
-    if (snapshots.length < 2) {
-      continue;
-    }
-
-    const delta = snapshots[snapshots.length - 1].value - snapshots[0].value;
-    const name = playerNameFromKey(playerKey);
-
-    if (delta > 0 && (!best || delta > best.delta)) {
-      best = { name, delta };
-    }
-  }
-
-  return best;
-}
-
-function findMostVolatile(history: PlayerSnapshot[], key: keyof PlayerSnapshot) {
-  const grouped = groupSnapshots(history, key);
-  let best: { name: string; range: number } | null = null;
-
-  for (const [playerKey, snapshots] of grouped) {
-    if (snapshots.length < 2) {
-      continue;
-    }
-
-    const values = snapshots.map((snapshot) => snapshot.value);
-    const range = Math.max(...values) - Math.min(...values);
-    const name = playerNameFromKey(playerKey);
-
-    if (!best || range > best.range) {
-      best = { name, range };
-    }
-  }
-
-  return best;
-}
-
-function groupSnapshots(history: PlayerSnapshot[], key: keyof PlayerSnapshot) {
-  const grouped = new Map<string, Array<{ value: number; fetchedAt: string }>>();
-
-  for (const snapshot of history) {
-    const value = snapshot[key];
-
-    if (typeof value !== "number") {
-      continue;
-    }
-
-    const list = grouped.get(snapshot.playerKey) ?? [];
-    list.push({ value, fetchedAt: snapshot.fetchedAt });
-    grouped.set(snapshot.playerKey, list);
-  }
-
-  for (const list of grouped.values()) {
-    list.sort((a, b) => new Date(a.fetchedAt).getTime() - new Date(b.fetchedAt).getTime());
-  }
-
-  return grouped;
-}
-
-function playerNameFromKey(playerKey: string) {
-  return playerKey
-    .split("-")
-    .filter(Boolean)
-    .map((part) => part[0]?.toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-type Pair = {
-  names: string;
-  kdGap: number;
-  winGap: number;
-  rankGap: number;
-  distance: number;
-};
-
-function buildPairs(players: NormalizedPlayerStats[]): Pair[] {
-  const pairs: Pair[] = [];
-
-  for (let left = 0; left < players.length; left += 1) {
-    for (let right = left + 1; right < players.length; right += 1) {
-      const a = players[left];
-      const b = players[right];
-      const kdGap = metricGap(a.kd, b.kd);
-      const winGap = metricGap(a.winRate, b.winRate);
-      const rankGap = metricGap(a.rankPoints, b.rankPoints);
-
-      pairs.push({
-        names: `${a.displayName} + ${b.displayName}`,
-        kdGap,
-        winGap,
-        rankGap,
-        distance: kdGap * 250 + winGap * 8 + rankGap,
-      });
-    }
-  }
-
-  return pairs;
-}
-
-function bestPair(
-  label: string,
-  pairs: Pair[],
-  scorer: (pair: Pair) => number,
-  reason: string,
-) {
-  const pair = pairs.reduce<Pair | null>((best, current) => {
-    if (!best || scorer(current) > scorer(best)) {
-      return current;
-    }
-
-    return best;
-  }, null);
-
-  return {
-    label,
-    names: pair?.names ?? "--",
-    reason,
-  };
-}
-
-function metricGap(left: number | null, right: number | null) {
-  if (left === null || right === null) {
-    return 0;
-  }
-
-  return Math.abs(left - right);
-}
-
-function buildChartData(history: PlayerSnapshot[]) {
-  return history
-    .filter((snapshot) => snapshot.rankPoints !== null)
-    .slice(-50)
-    .map((snapshot) => ({
-      label: new Date(snapshot.fetchedAt).toLocaleDateString("en-GB", {
-        month: "short",
-        day: "numeric",
-      }),
-      rankPoints: snapshot.rankPoints,
-    }));
+function signed(value: number) {
+  return value > 0 ? `+${formatNumber(value)}` : formatNumber(value);
 }
 
 function formatTime(value: string) {

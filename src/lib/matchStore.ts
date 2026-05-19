@@ -6,6 +6,20 @@ const seasonMatchesKey = (seasonKey: string) => `r6:matches:${seasonKey}`;
 const latestLimit = 100;
 const seasonLimit = 500;
 
+export async function getStoredMatches(seasonKey?: string) {
+  const redis = getRedis();
+
+  if (!redis) {
+    return [];
+  }
+
+  if (seasonKey) {
+    return (await redis.get<StoredMatchSummary[]>(seasonMatchesKey(seasonKey))) ?? [];
+  }
+
+  return (await redis.get<StoredMatchSummary[]>(latestMatchesKey)) ?? [];
+}
+
 export async function ingestMatches(payload: MatchIngestPayload) {
   const redis = getRedis();
 
