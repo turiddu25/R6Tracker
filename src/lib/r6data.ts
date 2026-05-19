@@ -7,7 +7,7 @@ export async function fetchR6DataBundle(friend: FriendConfig): Promise<R6DataBun
   const seasonYear = toR6DataSeasonYear(getSeasonForDate().key);
   const [stats, seasonalStats, operatorStats] = await Promise.all([
     fetchR6Data("stats", friend, { platform_families: friend.platformFamily }),
-    fetchR6Data("seasonalStats", friend, seasonYear ? { seasonYear } : {}),
+    fetchR6Data("seasonalStats", friend),
     fetchR6Data("operatorStats", friend, {
       modes: "ranked",
       ...(seasonYear ? { seasonYear } : {}),
