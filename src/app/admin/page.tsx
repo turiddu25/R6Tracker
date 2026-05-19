@@ -6,6 +6,7 @@ import type { ScraperJob } from "@/lib/scraperJobs";
 export default function AdminPage() {
   const [password, setPassword] = useState("");
   const [job, setJob] = useState<ScraperJob | null>(null);
+  const [refreshStatus, setRefreshStatus] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -67,6 +68,21 @@ export default function AdminPage() {
     });
   }
 
+  function refreshR6Data() {
+    startTransition(async () => {
+      setRefreshStatus(null);
+      const response = await fetch("/api/refresh", { method: "POST" });
+      const body = await response.json();
+
+      if (!response.ok) {
+        setRefreshStatus(body.error ?? "Could not refresh R6Data.");
+        return;
+      }
+
+      setRefreshStatus("R6Data refreshed.");
+    });
+  }
+
   return (
     <main className="adminShell">
       <section className="adminPanel">
@@ -94,12 +110,16 @@ export default function AdminPage() {
           <button disabled={isPending || !password} onClick={runScraper} type="button">
             {isPending ? "Queueing..." : "Run Scraper Now"}
           </button>
+          <button disabled={isPending} onClick={refreshR6Data} type="button">
+            Refresh R6Data
+          </button>
           <button disabled={!password} onClick={() => void loadStatus()} type="button">
             Refresh Status
           </button>
         </div>
 
         {message ? <p className="status">{message}</p> : null}
+        {refreshStatus ? <p className="status">{refreshStatus}</p> : null}
       </section>
 
       <section className="panel">

@@ -446,6 +446,13 @@ h1 {
   gap: 12px;
 }
 
+.playerRows {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: auto;
+  max-height: 520px;
+  padding-right: 4px;
+}
+
 .stackBar,
 .playerRow,
 .matchRow,
@@ -739,7 +746,8 @@ h1 {
   .chemistryGrid,
   .chartGrid,
   .filterDock,
-  .mapGrid {
+  .mapGrid,
+  .playerRows {
     grid-template-columns: 1fr;
   }
 
@@ -780,5 +788,9 @@ h1 {
 
   .metric strong {
     font-size: 1.1rem;
+  }
+
+  .playerRows {
+    max-height: none;
   }
 }

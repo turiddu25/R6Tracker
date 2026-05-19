@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { buildPlayerAnalytics, buildOperatorAnalytics } from "@/lib/matchAnalytics";
 import { formatDecimal, formatNumber, formatPercent } from "@/lib/number";
@@ -34,6 +34,8 @@ export default function PlayerClient({
 }) {
   const [matchData, setMatchData] = useState<MatchesResponse>(emptyMatches);
   const [squad, setSquad] = useState<SquadResponse>({ players: [] });
+  const [status, setStatus] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     void fetch("/api/matches", { cache: "no-store" })
@@ -49,6 +51,24 @@ export default function PlayerClient({
     () => buildOperatorAnalytics(squad.players.filter((player) => player.playerKey === playerKey)),
     [playerKey, squad.players],
   );
+
+  function refreshStats() {
+    startTransition(async () => {
+      setStatus(null);
+      const response = await fetch("/api/refresh", { method: "POST" });
+      const body = await response.json();
+
+      if (!response.ok) {
+        setStatus(body.error ?? "Could not refresh R6Data.");
+        return;
+      }
+
+      setStatus("R6Data refreshed. Operator data should update shortly.");
+      void fetch("/api/squad", { cache: "no-store" })
+        .then((res) => res.json())
+        .then((body: SquadResponse) => setSquad(body));
+    });
+  }
 
   if (!analytics.player) {
     return (
@@ -71,9 +91,15 @@ export default function PlayerClient({
           <p className="eyebrow">{displayName}</p>
           <h1>{analytics.player.displayName} page.</h1>
           <p>Player-specific ranked archive, stack partners, favorite maps, and operator usage.</p>
-          <a className="adminLink" href="/">
-            Back to home
-          </a>
+          <div className="heroActions">
+            <button disabled={isPending} onClick={refreshStats} type="button">
+              {isPending ? "Refreshing..." : "Refresh R6Data"}
+            </button>
+            <a className="adminLink" href="/">
+              Back to home
+            </a>
+          </div>
+          {status ? <p className="status">{status}</p> : null}
         </div>
         <div className="heroPanel" style={{ background: `linear-gradient(160deg, ${accent}40, transparent 42%), var(--panel-strong)` }}>
           <span>Ranked games</span>
@@ -106,15 +132,22 @@ export default function PlayerClient({
         </div>
         <div className="panel">
           <h2>Top Operators</h2>
-          <div className="operatorGrid">
-            {operatorCards.map((operator) => (
-              <div className="operatorCard" key={operator.operator}>
-                <strong>{operator.operator}</strong>
-                <span>{operator.matches} matches</span>
-                <small>{formatPercent(operator.winRate)} win | {formatDecimal(operator.kd)} K/D</small>
-              </div>
-            ))}
-          </div>
+          {operatorCards.length > 0 ? (
+            <div className="operatorGrid">
+              {operatorCards.map((operator) => (
+                <div className="operatorCard" key={operator.operator}>
+                  <strong>{operator.operator}</strong>
+                  <span>{operator.matches} matches</span>
+                  <small>{formatPercent(operator.winRate)} win | {formatDecimal(operator.kd)} K/D</small>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="emptyState">
+              <h2>No operator data yet.</h2>
+              <p>Click Refresh R6Data on this page or the home page after a refresh window.</p>
+            </div>
+          )}
         </div>
       </section>
 

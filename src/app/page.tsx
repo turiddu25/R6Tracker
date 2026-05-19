@@ -322,7 +322,9 @@ function PlayerMini({ player }: { player: NormalizedPlayerStats }) {
   return (
     <a className="playerMini" href={`/players/${player.playerKey}`}>
       <strong>{player.displayName}</strong>
-      <span>{player.rank ?? "Unranked?"} | {formatDecimal(player.kd)} K/D</span>
+      <span>
+        {player.rank ?? "Unranked?"} | {formatDecimal(player.kd)} K/D
+      </span>
       <small>{formatPercent(player.winRate)} win | {formatNumber(player.matches)} matches</small>
     </a>
   );
