@@ -1,4 +1,5 @@
 import type { StoredMatchSummary } from "@/lib/matchTypes";
+import type { NormalizedPlayerStats } from "@/lib/types";
 
 export type StackFilter = "all" | "solo" | "duo" | "trio" | "four" | "full";
 export type TimeFilter = "all" | "today" | "week";
@@ -35,6 +36,23 @@ export type StackBreakdown = {
   deaths: number;
   kd: number | null;
   rpDelta: number;
+  lineups: StackLineup[];
+};
+
+export type StackLineup = {
+  key: string;
+  stackSize: number;
+  stackPlayerKeys: string[];
+  stackPlayerNames: string[];
+  matches: number;
+  wins: number;
+  losses: number;
+  winRate: number | null;
+  kills: number;
+  deaths: number;
+  kd: number | null;
+  rpDelta: number;
+  resultLabel: string;
 };
 
 export type DailyPoint = {
@@ -64,6 +82,19 @@ export type AwardCard = {
   caption: string;
 };
 
+export type OperatorCard = {
+  operator: string;
+  matches: number;
+  wins: number;
+  losses: number;
+  winRate: number | null;
+  kd: number | null;
+  kills: number;
+  deaths: number;
+  headshotRate: number | null;
+  side: string | null;
+};
+
 export type MatchAnalytics = {
   totals: {
     matches: number;
@@ -87,6 +118,7 @@ export type MatchAnalytics = {
   awards: AwardCard[];
   latestMatches: StoredMatchSummary[];
   playlists: string[];
+  exactStackLineups: StackLineup[];
 };
 
 export function buildMatchAnalytics(
@@ -104,8 +136,73 @@ export function buildMatchAnalytics(
     maps: buildMaps(filtered),
     awards: buildAwards(filtered, totals),
     latestMatches: filtered.slice(0, 18),
-    playlists: [...new Set(matches.map((match) => match.playlist ?? "Unknown"))].sort(),
+    playlists: [...new Set(matches.map((match) => match.playlist ?? "Ranked"))].sort(),
+    exactStackLineups: buildExactLineups(filtered),
   };
+}
+
+export function buildPlayerAnalytics(matches: StoredMatchSummary[], playerKey: string) {
+  const filtered = matches.filter((match) => match.players.some((player) => player.playerKey === playerKey));
+  return {
+    player: buildPlayers(filtered).find((player) => player.playerKey === playerKey) ?? null,
+    matches: filtered,
+    lineups: buildExactLineups(filtered).filter((lineup) => lineup.stackPlayerKeys.includes(playerKey)),
+    daily: buildDaily(filtered),
+    maps: buildMaps(filtered),
+    awards: buildAwards(filtered, buildTotals(filtered)),
+    totals: buildTotals(filtered),
+  };
+}
+
+export function buildStackAnalytics(matches: StoredMatchSummary[]) {
+  const ranked = matches.filter(isRankedMatch);
+  return {
+    totals: buildTotals(ranked),
+    lineups: buildExactLineups(ranked).filter((lineup) => lineup.stackSize >= 2),
+    daily: buildDaily(ranked),
+    maps: buildMaps(ranked),
+    awards: buildAwards(ranked, buildTotals(ranked)),
+    stackBreakdown: buildStackBreakdown(ranked),
+  };
+}
+
+export function buildOperatorAnalytics(players: NormalizedPlayerStats[]) {
+  const grouped = new Map<string, OperatorCard>();
+
+  for (const player of players) {
+    for (const operator of player.operators ?? []) {
+      const key = operator.operator.toLowerCase();
+      const current =
+        grouped.get(key) ??
+        {
+          operator: operator.operator,
+          matches: 0,
+          wins: 0,
+          losses: 0,
+          winRate: null,
+          kd: null,
+          kills: 0,
+          deaths: 0,
+          headshotRate: null,
+          side: operator.side,
+        };
+
+      current.matches += operator.matchesPlayed ?? 0;
+      current.wins += operator.matchesWon ?? 0;
+      current.losses += operator.matchesLost ?? 0;
+      current.kills += operator.kills ?? 0;
+      current.deaths += operator.deaths ?? 0;
+      current.kd = ratio(current.kills, current.deaths);
+      current.winRate = percentage(current.wins, current.wins + current.losses);
+      current.headshotRate = operator.headshotPercent ?? current.headshotRate;
+      current.side = current.side ?? operator.side;
+      grouped.set(key, current);
+    }
+  }
+
+  return [...grouped.values()]
+    .sort((a, b) => b.matches - a.matches || (b.winRate ?? 0) - (a.winRate ?? 0))
+    .slice(0, 12);
 }
 
 function filterMatches(matches: StoredMatchSummary[], filters: MatchFilters) {
@@ -118,14 +215,11 @@ function filterMatches(matches: StoredMatchSummary[], filters: MatchFilters) {
       return false;
     }
 
-    if (filters.playlist !== "all" && (match.playlist ?? "Unknown") !== filters.playlist) {
+    if (filters.playlist !== "all" && (match.playlist ?? "Ranked") !== filters.playlist) {
       return false;
     }
 
-    if (
-      filters.player !== "all" &&
-      !match.stack.stackPlayerKeys.includes(filters.player)
-    ) {
+    if (filters.player !== "all" && !match.stack.stackPlayerKeys.includes(filters.player)) {
       return false;
     }
 
@@ -139,6 +233,10 @@ function stackFilterValue(match: StoredMatchSummary): StackFilter {
   if (match.stack.stackSize === 3) return "trio";
   if (match.stack.stackSize === 2) return "duo";
   return "solo";
+}
+
+function isRankedMatch(match: StoredMatchSummary) {
+  return (match.playlist ?? "").toLowerCase() === "ranked" || (match.mode ?? "").toLowerCase() === "ranked";
 }
 
 function isInTimeWindow(value: string, filter: TimeFilter) {
@@ -221,8 +319,49 @@ function buildPlayers(matches: StoredMatchSummary[]) {
   return [...grouped.values()].sort((a, b) => b.kills - a.kills);
 }
 
+function buildExactLineups(matches: StoredMatchSummary[]) {
+  const grouped = new Map<string, StackLineup>();
+
+  for (const match of matches) {
+    const keys = match.stack.stackPlayerKeys.slice().sort();
+    const names = (match.stack.stackPlayerNames ?? []).slice().sort();
+    const key = keys.join("+");
+    const current =
+      grouped.get(key) ??
+      {
+        key,
+        stackSize: match.stack.stackSize,
+        stackPlayerKeys: keys,
+        stackPlayerNames: names,
+        matches: 0,
+        wins: 0,
+        losses: 0,
+        winRate: null,
+        kills: 0,
+        deaths: 0,
+        kd: null,
+        rpDelta: 0,
+        resultLabel: formatLineupLabel(names, keys),
+      };
+
+    current.matches += 1;
+    current.wins += match.result === "win" ? 1 : 0;
+    current.losses += match.result === "loss" ? 1 : 0;
+    current.kills += sumMatchPlayers([match], "kills");
+    current.deaths += sumMatchPlayers([match], "deaths");
+    current.rpDelta += sumMatchPlayers([match], "rpDelta");
+    current.winRate = percentage(current.wins, current.wins + current.losses);
+    current.kd = ratio(current.kills, current.deaths);
+    grouped.set(key, current);
+  }
+
+  return [...grouped.values()]
+    .sort((a, b) => b.matches - a.matches || (b.winRate ?? 0) - (a.winRate ?? 0))
+    .slice(0, 24);
+}
+
 function buildStackBreakdown(matches: StoredMatchSummary[]) {
-  return [1, 2, 3, 4, 5].map((stackSize) => {
+  return [2, 3, 4, 5].map((stackSize) => {
     const stackMatches = matches.filter((match) =>
       stackSize === 5 ? match.stack.stackSize >= 5 : match.stack.stackSize === stackSize,
     );
@@ -242,6 +381,7 @@ function buildStackBreakdown(matches: StoredMatchSummary[]) {
       deaths,
       kd: ratio(kills, deaths),
       rpDelta: sumMatchPlayers(stackMatches, "rpDelta"),
+      lineups: buildExactLineups(stackMatches).filter((lineup) => lineup.stackSize === stackSize || (stackSize === 5 && lineup.stackSize >= 5)),
     };
   });
 }
@@ -359,4 +499,9 @@ function percentage(left: number, right: number) {
 
 function signed(value: number) {
   return value > 0 ? `+${value}` : String(value);
+}
+
+function formatLineupLabel(names: string[], keys: string[]) {
+  const visible = names.length > 0 ? names : keys;
+  return visible.join(" + ");
 }

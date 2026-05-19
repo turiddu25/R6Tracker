@@ -14,6 +14,7 @@ export type IngestMatchPlayer = {
 export type IngestStackSummary = {
   stackSize: number;
   stackPlayerKeys: string[];
+  stackPlayerNames?: string[];
   isFullStack: boolean;
   confidence: MatchConfidence;
 };

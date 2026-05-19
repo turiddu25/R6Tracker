@@ -456,6 +456,146 @@ h1 {
   background: rgba(255, 246, 221, 0.055);
 }
 
+.squadLinks,
+.stackCards,
+.operatorGrid {
+  display: grid;
+  gap: 12px;
+}
+
+.squadLinks {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.squadLink,
+.stackCard,
+.playerMini {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 16px;
+  background: rgba(255, 246, 221, 0.055);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.squadLink strong,
+.stackCard strong,
+.playerMini strong,
+.operatorCard strong {
+  color: var(--gold);
+}
+
+.squadLink span,
+.stackCard span,
+.playerMini span,
+.operatorCard span,
+.operatorCard small {
+  color: var(--faded);
+}
+
+.squadLink.accent {
+  border-color: rgba(102, 224, 255, 0.34);
+  background: linear-gradient(145deg, rgba(102, 224, 255, 0.1), rgba(255, 246, 221, 0.04));
+}
+
+.stackCards {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.operatorGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.operatorCard {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 16px;
+  background: rgba(255, 246, 221, 0.055);
+}
+
+.stackBoard {
+  display: grid;
+  gap: 18px;
+  margin-top: 22px;
+}
+
+.stackBoardPanel {
+  position: relative;
+  overflow: hidden;
+}
+
+.stackBoardPanel::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 6px;
+  background: linear-gradient(180deg, var(--gold), transparent);
+  content: "";
+}
+
+.tone-gold::before {
+  background: linear-gradient(180deg, #f5c542, transparent);
+}
+
+.tone-sky::before {
+  background: linear-gradient(180deg, #66e0ff, transparent);
+}
+
+.tone-green::before {
+  background: linear-gradient(180deg, #91ff9e, transparent);
+}
+
+.tone-danger::before {
+  background: linear-gradient(180deg, #ff6b4a, transparent);
+}
+
+.stackBoardHeader p {
+  margin: 0.25rem 0 0;
+  color: var(--faded);
+}
+
+.stackBoardGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.stackBoardCard {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 16px;
+  background:
+    linear-gradient(135deg, rgba(245, 197, 66, 0.08), transparent 50%),
+    rgba(255, 246, 221, 0.05);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.stackBoardCard span,
+.stackBoardCard small,
+.stackBoardHeader p {
+  color: var(--faded);
+}
+
+.stackBoardCard:hover {
+  transform: translateY(-2px);
+}
+
+.stackBoardCard strong {
+  color: var(--gold);
+}
+
+.playerMini:hover,
+.stackCard:hover,
+.squadLink:hover {
+  transform: translateY(-2px);
+}
+
 .stackBar {
   display: grid;
   gap: 10px;

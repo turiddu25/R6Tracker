@@ -14,10 +14,10 @@ export async function getStoredMatches(seasonKey?: string) {
   }
 
   if (seasonKey) {
-    return (await redis.get<StoredMatchSummary[]>(seasonMatchesKey(seasonKey))) ?? [];
+    return filterRanked((await redis.get<StoredMatchSummary[]>(seasonMatchesKey(seasonKey))) ?? []);
   }
 
-  return (await redis.get<StoredMatchSummary[]>(latestMatchesKey)) ?? [];
+  return filterRanked((await redis.get<StoredMatchSummary[]>(latestMatchesKey)) ?? []);
 }
 
 export async function ingestMatches(payload: MatchIngestPayload) {
@@ -28,7 +28,8 @@ export async function ingestMatches(payload: MatchIngestPayload) {
   }
 
   const ingestedAt = new Date().toISOString();
-  const stored = payload.matches.map((match) => toStoredMatch(match, payload, ingestedAt));
+  const rankedMatches = payload.matches.filter(isRankedMatch);
+  const stored = rankedMatches.map((match) => toStoredMatch(match, payload, ingestedAt));
   const seasonKeys = [...new Set(stored.map((match) => match.seasonKey))];
 
   const latest = await mergeMatchBucket(
@@ -101,4 +102,12 @@ function buildMatchId(match: IngestMatchSummary) {
     match.score ?? "unknown-score",
     players,
   ].join(":");
+}
+
+function isRankedMatch(match: IngestMatchSummary) {
+  return (match.playlist ?? "").toLowerCase() === "ranked" || (match.mode ?? "").toLowerCase() === "ranked";
+}
+
+function filterRanked(matches: StoredMatchSummary[]) {
+  return matches.filter(isRankedMatch);
 }

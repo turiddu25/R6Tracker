@@ -1,14 +1,20 @@
 import type { FriendConfig, R6DataBundle } from "@/lib/types";
+import { getSeasonForDate, toR6DataSeasonYear } from "@/config/seasons";
 
 const baseUrl = "https://api.r6data.eu/api/stats";
 
 export async function fetchR6DataBundle(friend: FriendConfig): Promise<R6DataBundle> {
-  const [stats, seasonalStats] = await Promise.all([
+  const seasonYear = toR6DataSeasonYear(getSeasonForDate().key);
+  const [stats, seasonalStats, operatorStats] = await Promise.all([
     fetchR6Data("stats", friend, { platform_families: friend.platformFamily }),
-    fetchR6Data("seasonalStats", friend),
+    fetchR6Data("seasonalStats", friend, seasonYear ? { seasonYear } : {}),
+    fetchR6Data("operatorStats", friend, {
+      modes: "ranked",
+      ...(seasonYear ? { seasonYear } : {}),
+    }),
   ]);
 
-  return { stats, seasonalStats };
+  return { stats, seasonalStats, operatorStats };
 }
 
 async function fetchR6Data(

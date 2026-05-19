@@ -43,3 +43,13 @@ export function getSeasonForDate(value: string | Date = new Date()) {
     sorted[0]
   );
 }
+
+export function toR6DataSeasonYear(seasonKey: string) {
+  const match = /^y(\d+)s(\d+)$/i.exec(seasonKey);
+
+  if (!match) {
+    return null;
+  }
+
+  return `Y${Number(match[1])}S${Number(match[2])}`;
+}

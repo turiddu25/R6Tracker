@@ -13,6 +13,30 @@ export type FriendConfig = {
 
 export type StatValue = number | null;
 
+export type OperatorStat = {
+  operator: string;
+  side: string | null;
+  roundsPlayed: number | null;
+  matchesPlayed: number | null;
+  matchesWon: number | null;
+  matchesLost: number | null;
+  winPercent: number | null;
+  matchWinPercent: number | null;
+  kd: number | null;
+  kills: number | null;
+  deaths: number | null;
+  assists: number | null;
+  headshotPercent: number | null;
+  headshots: number | null;
+  timePlayed: string | null;
+  timePlayedMs: number | null;
+  clutches: number | null;
+  clutchesLost: number | null;
+  firstBloods: number | null;
+  firstDeaths: number | null;
+  teamKills: number | null;
+};
+
 export type NormalizedPlayerStats = {
   playerKey: string;
   displayName: string;
@@ -39,6 +63,7 @@ export type NormalizedPlayerStats = {
   headshots: StatValue;
   headshotRate: StatValue;
   playtimeHours: StatValue;
+  operators: OperatorStat[];
   rawSummary: Record<string, unknown>;
 };
 
@@ -68,4 +93,5 @@ export type SquadResponse = {
 export type R6DataBundle = {
   stats: unknown;
   seasonalStats: unknown;
+  operatorStats: unknown;
 };

@@ -1,4 +1,4 @@
-import type { FriendConfig, NormalizedPlayerStats, R6DataBundle } from "@/lib/types";
+import type { FriendConfig, NormalizedPlayerStats, OperatorStat, R6DataBundle } from "@/lib/types";
 import { asNumber, round } from "@/lib/number";
 import { getSeasonForDate } from "@/config/seasons";
 
@@ -88,6 +88,7 @@ export function normalizePlayerStats(
     headshots,
     headshotRate: round(headshotRate, 1),
     playtimeHours,
+    operators: normalizeOperators(bundle.operatorStats),
     rawSummary: stats,
   };
 }
@@ -205,4 +206,44 @@ function readObject(value: unknown): Record<string, unknown> | null {
 
 function readString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function normalizeOperators(data: unknown): OperatorStat[] {
+  const objects = collectObjects(data);
+
+  return objects
+    .map((object) => {
+      const operator = readString(object.operator) ?? readString(object.name) ?? readString(object.key);
+
+      if (!operator) {
+        return null;
+      }
+
+      return {
+        operator,
+        side: readString(object.side),
+        roundsPlayed: pickNumber(object, ["roundsPlayed", "rounds", "gamesPlayed"]),
+        matchesPlayed: pickNumber(object, ["matchesPlayed", "matches"]),
+        matchesWon: pickNumber(object, ["matchesWon", "wins"]),
+        matchesLost: pickNumber(object, ["matchesLost", "losses"]),
+        winPercent: pickNumber(object, ["winPercent", "winRate"]),
+        matchWinPercent: pickNumber(object, ["matchWinPercent"]),
+        kd: pickNumber(object, ["kd", "killDeathRatio"]),
+        kills: pickNumber(object, ["kills"]),
+        deaths: pickNumber(object, ["deaths"]),
+        assists: pickNumber(object, ["assists"]),
+        headshotPercent: pickNumber(object, ["headshotPercent", "headshotRate"]),
+        headshots: pickNumber(object, ["headshots"]),
+        timePlayed: readString(object.timePlayed),
+        timePlayedMs: pickNumber(object, ["timePlayedMs"]),
+        clutches: pickNumber(object, ["clutches"]),
+        clutchesLost: pickNumber(object, ["clutchesLost"]),
+        firstBloods: pickNumber(object, ["firstBloods"]),
+        firstDeaths: pickNumber(object, ["firstDeaths"]),
+        teamKills: pickNumber(object, ["teamKills"]),
+      };
+    })
+    .filter((operator): operator is NonNullable<typeof operator> => operator !== null)
+    .sort((a, b) => (b.roundsPlayed ?? 0) - (a.roundsPlayed ?? 0))
+    .slice(0, 12);
 }

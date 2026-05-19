@@ -1,21 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { friends } from "@/config/friends";
 import type { StoredMatchSummary } from "@/lib/matchTypes";
 import type { NormalizedPlayerStats, SquadResponse } from "@/lib/types";
 import {
   buildMatchAnalytics,
+  buildOperatorAnalytics,
   type MatchFilters,
   type StackFilter,
   type TimeFilter,
@@ -97,6 +89,7 @@ export default function Home() {
     () => buildMatchAnalytics(matchData.matches, filters),
     [matchData.matches, filters],
   );
+  const operatorCards = useMemo(() => buildOperatorAnalytics(squad.players), [squad.players]);
   const playerOptions = useMemo(() => {
     const keys = new Map<string, string>();
 
@@ -116,11 +109,11 @@ export default function Home() {
       <section className="hero matchHero">
         <div className="heroCopy">
           <p className="eyebrow">R6 Squad Room</p>
-          <h1>The Stack Lab.</h1>
+          <h1>Command center.</h1>
           <p>
-            Match-level filters for solo games, duo queues, trio queues,
-            four-stacks, and full-stack nights. The scraper runs locally; this
-            page only reads normalized match summaries.
+            Ranked-only squad data with exact stack comparisons, per-player pages, and operator
+            breakdowns. R6Data powers the live player cards; the mini-PC scraper powers the local
+            match archive.
           </p>
           <p className="seasonPill">Current split: {matchData.activeSeasonName}</p>
           <div className="heroActions">
@@ -136,11 +129,13 @@ export default function Home() {
           </div>
           {error ? <p className="status error">{error}</p> : null}
           {squad.warnings.map((warning) => (
-            <p className="status" key={warning}>{warning}</p>
+            <p className="status" key={warning}>
+              {warning}
+            </p>
           ))}
         </div>
         <div className="heroPanel">
-          <span>Filtered Matches</span>
+          <span>Ranked matches</span>
           <strong>{formatNumber(analytics.totals.matches)}</strong>
           <small>{analytics.totals.fullStackMatches} full-stack games found</small>
         </div>
@@ -152,7 +147,6 @@ export default function Home() {
           value={filters.stack}
           options={[
             ["all", "All"],
-            ["solo", "Solo"],
             ["duo", "Duo"],
             ["trio", "Trio"],
             ["four", "4-Stack"],
@@ -173,7 +167,7 @@ export default function Home() {
         <FilterGroup
           label="Playlist"
           value={filters.playlist}
-          options={[["all", "All"], ...analytics.playlists.map((playlist) => [playlist, playlist] as const)]}
+          options={[["all", "Ranked"], ...analytics.playlists.map((playlist) => [playlist, playlist] as const)]}
           onChange={(value) => setFilters((current) => ({ ...current, playlist: value }))}
         />
         <FilterGroup
@@ -193,20 +187,18 @@ export default function Home() {
 
       <section className="splitSection">
         <div className="panel">
-          <h2>Stack Performance</h2>
-          <div className="stackBars">
-            {analytics.stackBreakdown.map((stack) => (
-              <div className="stackBar" key={stack.label}>
-                <div>
-                  <strong>{stack.label}</strong>
-                  <span>{stack.matches} matches</span>
-                </div>
-                <div className="barTrack">
-                  <div style={{ width: `${Math.min(stack.winRate ?? 0, 100)}%` }} />
-                </div>
-                <small>{formatPercent(stack.winRate)} win | {formatDecimal(stack.kd)} K/D | {signed(stack.rpDelta)} RP</small>
-              </div>
+          <h2>Click Into The Squad</h2>
+          <div className="squadLinks">
+            {friends.map((friend) => (
+              <a className="squadLink" href={`/players/${friend.key}`} key={friend.key}>
+                <strong>{friend.displayName}</strong>
+                <span>Player page</span>
+              </a>
             ))}
+            <a className="squadLink accent" href="/stack-lab">
+              <strong>Stack Lab</strong>
+              <span>Best duo/trio/full-stack comparisons</span>
+            </a>
           </div>
         </div>
         <div className="panel awards">
@@ -235,30 +227,39 @@ export default function Home() {
           </ResponsiveContainer>
         </div>
         <div className="panel chartPanel">
-          <h2>Games Per Day</h2>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={analytics.daily}>
-              <CartesianGrid stroke="rgba(255,255,255,.12)" vertical={false} />
-              <XAxis dataKey="label" stroke="#d8d0b8" />
-              <YAxis stroke="#d8d0b8" />
-              <Tooltip contentStyle={{ background: "#171713", border: "1px solid #393426" }} />
-              <Line type="monotone" dataKey="matches" stroke="#91ff9e" strokeWidth={3} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
+          <h2>Player Cards</h2>
+          <div className="playerRows">
+            {squad.players.map((player) => (
+              <PlayerMini key={player.playerKey} player={player} />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="panel">
+        <h2>Exact Stack Lineups</h2>
+        <div className="stackCards">
+          {analytics.exactStackLineups.slice(0, 8).map((lineup) => (
+            <a className="stackCard" href="/stack-lab" key={lineup.key}>
+              <strong>{lineup.resultLabel}</strong>
+              <span>
+                {lineup.matches} matches | {formatPercent(lineup.winRate)} win | {formatDecimal(lineup.kd)} K/D
+              </span>
+              <small>{lineup.stackPlayerNames.join(" + ") || lineup.stackPlayerKeys.join(" + ")}</small>
+            </a>
+          ))}
         </div>
       </section>
 
       <section className="splitSection">
         <div className="panel">
-          <h2>Player Form</h2>
-          <div className="playerRows">
-            {analytics.players.map((player) => (
-              <div className="playerRow" key={player.playerKey}>
-                <strong>{player.displayName}</strong>
-                <span>{player.matches} games</span>
-                <span>{formatDecimal(player.kd)} K/D</span>
-                <span>{formatPercent(player.winRate)} win</span>
-                <span>{signed(player.rpDelta)} RP</span>
+          <h2>Operator Picks</h2>
+          <div className="operatorGrid">
+            {operatorCards.map((operator) => (
+              <div className="operatorCard" key={operator.operator}>
+                <strong>{operator.operator}</strong>
+                <span>{operator.matches} matches</span>
+                <small>{formatPercent(operator.winRate)} win | {formatDecimal(operator.kd)} K/D</small>
               </div>
             ))}
           </div>
@@ -270,30 +271,12 @@ export default function Home() {
               <div className="mapCard" key={map.map}>
                 <strong>{map.map}</strong>
                 <span>{map.matches} games</span>
-                <small>{formatPercent(map.winRate)} win | {formatDecimal(map.kd)} K/D</small>
+                <small>
+                  {formatPercent(map.winRate)} win | {formatDecimal(map.kd)} K/D
+                </small>
               </div>
             ))}
           </div>
-        </div>
-      </section>
-
-      <section className="panel">
-        <h2>Recent Match Feed</h2>
-        <div className="matchFeed">
-          {analytics.latestMatches.length === 0 ? <EmptyMatches /> : null}
-          {analytics.latestMatches.map((match) => (
-            <article className="matchRow" key={match.id}>
-              <div>
-                <strong>{match.map ?? "Unknown Map"}</strong>
-                <span>{formatTime(match.startedAt)} | {match.playlist ?? "Unknown"} | {match.score ?? "--"}</span>
-              </div>
-              <div>
-                <strong className={match.result === "win" ? "winText" : match.result === "loss" ? "lossText" : ""}>{match.result.toUpperCase()}</strong>
-                <span>{match.stack.stackSize}-stack | {match.confidence}</span>
-              </div>
-              <small>{match.stack.stackPlayerKeys.join(", ") || "unknown stack"}</small>
-            </article>
-          ))}
         </div>
       </section>
     </main>
@@ -316,7 +299,9 @@ function FilterGroup({
       <span>{label}</span>
       <select value={value} onChange={(event) => onChange(event.target.value)}>
         {options.map(([optionValue, optionLabel]) => (
-          <option key={optionValue} value={optionValue}>{optionLabel}</option>
+          <option key={optionValue} value={optionValue}>
+            {optionLabel}
+          </option>
         ))}
       </select>
     </label>
@@ -333,12 +318,13 @@ function Kpi({ label, value, caption }: { label: string; value: string; caption:
   );
 }
 
-function EmptyMatches() {
+function PlayerMini({ player }: { player: NormalizedPlayerStats }) {
   return (
-    <div className="emptyState">
-      <h2>No ingested matches yet.</h2>
-      <p>Start the mini PC worker, open `/admin`, and run the scraper after a session.</p>
-    </div>
+    <a className="playerMini" href={`/players/${player.playerKey}`}>
+      <strong>{player.displayName}</strong>
+      <span>{player.rank ?? "Unranked?"} | {formatDecimal(player.kd)} K/D</span>
+      <small>{formatPercent(player.winRate)} win | {formatNumber(player.matches)} matches</small>
+    </a>
   );
 }
 

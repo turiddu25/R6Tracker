@@ -42,6 +42,7 @@ export default function AdminPage() {
 
   function savePassword() {
     window.localStorage.setItem("r6-admin-password", password);
+    setMessage("Password saved locally for this browser.");
     void loadStatus(password);
   }
 
