@@ -5,3 +5,7 @@ out
 .env*.local
 *.tsbuildinfo
 vercel
+scraper-lab/data/artifacts
+scraper-lab/data/out
+scraper-lab/.env
+scraper-lab/*
