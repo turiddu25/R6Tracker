@@ -75,11 +75,11 @@ export default function AdminPage() {
       const body = await response.json();
 
       if (!response.ok) {
-        setRefreshStatus(body.error ?? "Could not refresh R6Data.");
+        setRefreshStatus(body.error ?? body.warnings?.[0] ?? "Could not refresh R6Data.");
         return;
       }
 
-      setRefreshStatus("R6Data refreshed.");
+      setRefreshStatus(body.warnings?.[0] ?? "R6Data refreshed.");
     });
   }
 
